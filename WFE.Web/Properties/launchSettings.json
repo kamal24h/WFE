@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "WFE.Web": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:51113;http://localhost:51114"
+    }
+  }
+}
