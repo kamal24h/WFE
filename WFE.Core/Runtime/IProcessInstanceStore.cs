@@ -46,5 +46,15 @@ namespace WFE.Core.Runtime
     {
         Task<(WfeProcessScheme Scheme, Schema.ResolvedProcessSchema Resolved)> GetAsync(
             long processSchemeId, CancellationToken cancellationToken = default);
+
+        /// <summary>Creates a FRESH WfeProcessScheme snapshot copied from the given WfeScheme's
+        /// current XML, right now - always a new row, no reuse/dedup, no supersede-previous
+        /// logic (that's SchemeDesignerController.Publish's job for the "official" publish
+        /// flow). This is the fast path for rapid test/evaluation iteration: point a client at
+        /// a WfeScheme.Id, and every run gets its own immutable copy of whatever that scheme's
+        /// XML currently is - editing the WfeScheme afterward can never retroactively affect an
+        /// instance already running against a snapshot taken before the edit.</summary>
+        Task<(WfeProcessScheme Scheme, Schema.ResolvedProcessSchema Resolved)> CreateSnapshotAsync(
+            long schemeId, bool trackHistory, CancellationToken cancellationToken = default);
     }
 }

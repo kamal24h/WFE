@@ -65,6 +65,28 @@ namespace WFE.Runtime
         public Task<WorkflowExecutionResult> ProcessPacketAsync(
             long processSchemeId, WfePacket packet, string actorId, CancellationToken cancellationToken = default)
         {
+            return StartInstanceAsync(processSchemeId, BuildPacketParameters(packet), actorId, cancellationToken);
+        }
+
+        public async Task<WorkflowExecutionResult> StartInstanceFromSchemeAsync(
+            long schemeId,
+            IReadOnlyDictionary<string, string> initialParameters,
+            string actorId,
+            CancellationToken cancellationToken = default)
+        {
+            var (scheme, resolved) = await _schemeProvider.CreateSnapshotAsync(schemeId, trackHistory: true, cancellationToken);
+            return await CreateAndRunAsync(scheme, resolved, resolved.InitialActivity, initialParameters,
+                actorId, parentInstanceId: null, rootInstanceId: null, forkTransitionName: null, cancellationToken);
+        }
+
+        public Task<WorkflowExecutionResult> ProcessPacketFromSchemeAsync(
+            long schemeId, WfePacket packet, string actorId, CancellationToken cancellationToken = default)
+        {
+            return StartInstanceFromSchemeAsync(schemeId, BuildPacketParameters(packet), actorId, cancellationToken);
+        }
+
+        private static Dictionary<string, string> BuildPacketParameters(WfePacket packet)
+        {
             var parameters = new Dictionary<string, string>
             {
                 ["Tag"] = packet.Tag,
@@ -74,8 +96,7 @@ namespace WFE.Runtime
             if (packet.Metadata != null)
                 foreach (var kvp in packet.Metadata)
                     parameters[kvp.Key] = kvp.Value;
-
-            return StartInstanceAsync(processSchemeId, parameters, actorId, cancellationToken);
+            return parameters;
         }
 
         public async Task<WorkflowExecutionResult> StartChildInstanceAsync(
@@ -255,6 +276,7 @@ namespace WFE.Runtime
         }
 
         // --- core loop ---
+
         private async Task<WorkflowExecutionResult> RunAutoLoopAsync(
             WfeProcessScheme scheme, ResolvedProcessSchema resolved, WfeProcessInstance instance,
             string actorId, CancellationToken cancellationToken)

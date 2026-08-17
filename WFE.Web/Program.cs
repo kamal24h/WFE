@@ -103,7 +103,13 @@ builder.Services.AddScoped<CommandService>();
 builder.Services.AddScoped<IWorkflowRuntime, WorkflowRuntime>();
 
 // --- Web ---
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Status (WorkflowInstanceStatus) would otherwise serialize as a bare int - strings
+        // are far easier to read while testing via Swagger/a client, at no real cost.
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -120,7 +126,6 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(); // served at /swagger
-    // https://localhost:51113/swagger
 }
 
 app.MapControllers();

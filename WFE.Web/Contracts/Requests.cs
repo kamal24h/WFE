@@ -4,14 +4,23 @@ namespace WFE.Web.Contracts
 {
     public class StartInstanceRequest
     {
-        public long ProcessSchemeId { get; set; }
+        /// <summary>Provide exactly one of ProcessSchemeId or WfeSchemeId. ProcessSchemeId
+        /// starts against an already-published, shared runtime snapshot. WfeSchemeId is the
+        /// test/evaluation fast path - creates a fresh snapshot of that WfeScheme's current
+        /// XML and starts against it in one call, no separate publish step.</summary>
+        public long? ProcessSchemeId { get; set; }
+        public long? WfeSchemeId { get; set; }
+
         public string ActorId { get; set; }
         public Dictionary<string, string> Parameters { get; set; }
     }
 
     public class IngestPacketRequest
     {
-        public long ProcessSchemeId { get; set; }
+        /// <summary>Provide exactly one of ProcessSchemeId or WfeSchemeId - see
+        /// StartInstanceRequest for the distinction.</summary>
+        public long? ProcessSchemeId { get; set; }
+        public long? WfeSchemeId { get; set; }
 
         /// <summary>Identifies the calling ingestion source/service (e.g. your OPC-UA/MQTT
         /// microservice's own id) - required, not defaulted, so the audit trail is meaningful.</summary>

@@ -26,8 +26,14 @@ namespace WFE.Web.Controllers
         public async Task<ActionResult<WorkflowExecutionResult>> Start(
             StartInstanceRequest request, CancellationToken cancellationToken)
         {
-            var result = await _runtime.StartInstanceAsync(
-                request.ProcessSchemeId, request.Parameters, request.ActorId, cancellationToken);
+            if (request.ProcessSchemeId == null && request.WfeSchemeId == null)
+                return BadRequest(new { error = "Either ProcessSchemeId or WfeSchemeId must be provided." });
+
+            var result = request.WfeSchemeId.HasValue
+                ? await _runtime.StartInstanceFromSchemeAsync(
+                    request.WfeSchemeId.Value, request.Parameters, request.ActorId, cancellationToken)
+                : await _runtime.StartInstanceAsync(
+                    request.ProcessSchemeId.Value, request.Parameters, request.ActorId, cancellationToken);
             return Ok(result);
         }
 

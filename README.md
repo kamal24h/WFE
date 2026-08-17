@@ -118,6 +118,71 @@ Before you do:
   unreachable dead code after an early `throw`, and the reference list was rebuilt on every
   single compilation instead of cached once.
 
+## WFE.Client - evaluation harness
+
+A separate, standalone ASP.NET Core MVC project (no project reference to the engine - it talks
+to `WFE.Web` purely over HTTP, the way your real ingestion microservice would):
+
+- **`Services/RabbitMqSubscriberService.cs`** - a `BackgroundService` using **RabbitMQ.Client**
+  that consumes from an existing queue and forwards every message to the engine's
+  `POST /api/ingestion/packets`. Does **not** declare exchanges/bindings by default
+  (`RabbitMq:DeclareQueue=false`) - it assumes your queue/exchange/bindings already exist and
+  only consumes. Messages are manually ack'd only after the engine call succeeds; a failed
+  ingest Nacks with requeue - fine for evaluation, but add a dead-letter policy on your queue if
+  you need better isolation from a persistently-failing engine. **Disabled by default**
+  (`RabbitMq:AutoConnect=false`) so the app runs with zero broker dependency until you point the
+  connection settings at your real instance.
+- **Dashboard at `/`** - connection status, a manual "send a test packet" form (simulates a
+  broker message with no broker needed - the fastest way to evaluate the engine), and a
+  round-trip-timed log of recent activity (instance id, resulting activity/status, latency).
+- **Message shape assumption**: if a message payload parses as JSON with `Tag`/`Value` keys,
+  those are used (rest of the object becomes packet Metadata); otherwise the message's routing
+  key becomes `Tag` and the raw payload becomes `Value`. Adjust `HandleMessageAsync` if your
+  actual packets look different.
+
+**Before running:** set `RabbitMq:HostName`/`Port`/`VirtualHost`/`UserName`/`Password`/`QueueName`
+in `WFE.Client/appsettings.json` to match your already-running RabbitMQ setup, set
+`RabbitMq:AutoConnect=true`, and set `WfeApi:ProcessSchemeId` to a scheme you've already
+published on the engine. Also, since `WfeApi:BaseUrl` defaults to `WFE.Web`'s HTTPS dev URL,
+you'll need to trust the local dev cert once (`dotnet dev-certs https --trust`) or the client's
+HTTP calls will fail with an SSL error - the client itself has no certificate configuration to
+fix, this is purely a local-dev-environment step.
+
+## Test-from-WfeScheme fast path (engine) + batch records (client)
+
+Two related additions, both from your latest request:
+
+- **`IWorkflowRuntime.StartInstanceFromSchemeAsync` / `ProcessPacketFromSchemeAsync`** - a new
+  engine capability alongside the existing publish-then-start flow. Point it at a `WfeScheme.Id`
+  directly; internally it calls the new `IProcessSchemeProvider.CreateSnapshotAsync`, which
+  copies that scheme's **current** XML into a brand-new `WfeProcessScheme` row at that exact
+  moment and starts the instance against it. Editing the `WfeScheme` afterward can never
+  retroactively affect an instance already running - it's working from its own frozen copy, per
+  your description. **Every call creates a new `WfeProcessScheme` row** (no reuse, no
+  supersede-previous bookkeeping) - fine for rapid test iteration, but repeated test runs will
+  accumulate rows over time; nothing here cleans those up automatically. The instance's
+  `Status`/`Activity`/`State` are tracked and persisted continuously as it executes, exactly as
+  before - this was already the existing behavior, not something new. `POST /api/instances/start`
+  and `POST /api/ingestion/packets` both now accept **either** `ProcessSchemeId` (the original,
+  already-published-snapshot path) **or** `WfeSchemeId` (this new fast path) - provide exactly
+  one. `SchemeDesignerController.Publish` was refactored to share the same snapshot-creation
+  code rather than duplicating it.
+
+- **`WFE.Client` now expects batch messages, not single packets.** `RabbitMqOptions` config
+  changed from `ProcessSchemeId` to `WfeSchemeId` (matches the fast path above - the client
+  always tests against a `WfeScheme`, never a pre-published snapshot). Each RabbitMQ message is
+  now parsed as a JSON array of up to ~500 `SensorRecordDto` rows
+  (`DeviceId`/`Tag`/`Value`/`Timestamp` + anything else via `[JsonExtensionData]`, since you
+  didn't specify the exact extra field names - adjust `SensorRecordDto` if yours differ). Each
+  record starts its own instance, processed with bounded concurrency
+  (`RabbitMq:MaxConcurrentIngests`, default 10) instead of firing 500 simultaneous HTTP calls.
+  **Ack semantics changed accordingly**: the whole message is Ack'd once every record has been
+  attempted, regardless of individual failures - Nacking a 500-row batch over one bad record
+  would redeliver (and duplicate-instance) the 499 that already succeeded. See the doc comment
+  in `RabbitMqSubscriberService.cs` for the full reasoning; add per-record dead-lettering on
+  your side if you need stronger guarantees than "logged and visible on the dashboard" for
+  individual failures.
+
 ## Assumptions worth double-checking against your actual designer output
 
 - **Parallel/Subprocess assumptions (all in `WorkflowRuntime.cs`/`CheckAllSubprocessesCompletedCondition.cs`):**

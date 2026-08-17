@@ -1,0 +1,86 @@
+@model DashboardViewModel
+
+<h1>WFE Client — Evaluation Harness</h1>
+
+<div class="panel">
+    <dl>
+        <dt>WFE engine API</dt><dd>@Model.WfeBaseUrl</dd>
+        <dt>Target WfeSchemeId</dt><dd>@Model.WfeSchemeId <span style="color:#666">(a fresh WfeProcessScheme snapshot is created for every run)</span></dd>
+        <dt>RabbitMQ broker</dt><dd>@Model.RabbitMqEndpoint (queue: <code>@Model.RabbitMqQueueName</code>)</dd>
+        <dt>RabbitMQ auto-connect</dt>
+        <dd>
+            @if (Model.RabbitMqAutoConnect)
+            {
+                <span class="badge ok">enabled</span>
+            }
+            else
+            {
+                <span class="badge">disabled — set RabbitMq:AutoConnect=true in appsettings.json once connection settings match your broker</span>
+            }
+        </dd>
+    </dl>
+</div>
+
+<div class="panel">
+    <h3>Send a test packet</h3>
+    <p>Simulates a broker message without needing a real broker - the fastest way to see the engine respond.</p>
+    <form asp-controller="Home" asp-action="SendTestPacket" method="post">
+        <input type="text" name="tag" placeholder="Tag (e.g. Sensor001)" required />
+        <input type="text" name="value" placeholder="Value (e.g. 42.5)" required />
+        <button type="submit">Send</button>
+    </form>
+</div>
+
+<div class="panel">
+    <h3>Recent activity (@Model.RecentEntries.Count)</h3>
+    @if (Model.RecentEntries.Count == 0)
+    {
+        <p>Nothing sent yet.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+                <tr>
+                    <th>Time (UTC)</th>
+                    <th>Source</th>
+                    <th>Device</th>
+                    <th>Tag</th>
+                    <th>Value</th>
+                    <th>Result</th>
+                    <th>Instance</th>
+                    <th>ms</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in Model.RecentEntries)
+                {
+                    <tr>
+                        <td>@entry.TimestampUtc.ToString("HH:mm:ss.fff")</td>
+                        <td>@entry.Source</td>
+                        <td>@entry.DeviceId</td>
+                        <td>@entry.Tag</td>
+                        <td>@entry.Value</td>
+                        @if (entry.Result.Success)
+                        {
+                            <td class="ok">
+                                @entry.Result.Engine?.Status @@ @entry.Result.Engine?.Activity
+                                @if (!string.IsNullOrEmpty(entry.Result.Engine?.FaultReason))
+                                {
+                                    <div class="fail">@entry.Result.Engine.FaultReason</div>
+                                }
+                            </td>
+                            <td>#@entry.Result.Engine?.InstanceId</td>
+                        }
+                        else
+                        {
+                            <td class="fail">@entry.Result.ErrorMessage</td>
+                            <td>—</td>
+                        }
+                        <td>@entry.Result.ElapsedMs</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>

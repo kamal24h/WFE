@@ -28,6 +28,9 @@ namespace WFE.Web.Controllers
             if (string.IsNullOrWhiteSpace(request.ActorId))
                 return BadRequest(new { error = "ActorId is required - identify the calling ingestion source." });
 
+            if (request.ProcessSchemeId == null && request.WfeSchemeId == null)
+                return BadRequest(new { error = "Either ProcessSchemeId or WfeSchemeId must be provided." });
+
             var packet = new WfePacket
             {
                 Tag = request.Tag,
@@ -36,8 +39,9 @@ namespace WFE.Web.Controllers
                 Metadata = request.Metadata
             };
 
-            var result = await _runtime.ProcessPacketAsync(
-                request.ProcessSchemeId, packet, request.ActorId, cancellationToken);
+            var result = request.WfeSchemeId.HasValue
+                ? await _runtime.ProcessPacketFromSchemeAsync(request.WfeSchemeId.Value, packet, request.ActorId, cancellationToken)
+                : await _runtime.ProcessPacketAsync(request.ProcessSchemeId.Value, packet, request.ActorId, cancellationToken);
 
             return Ok(result);
         }

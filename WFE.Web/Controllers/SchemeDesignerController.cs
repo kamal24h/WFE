@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using WFE.Core.Runtime;
 using WFE.Core.Schema;
 using WFE.Models;
 using WFE.Persistence;
@@ -15,10 +16,12 @@ namespace WFE.Web.Controllers
     public class SchemeDesignerController : ControllerBase
     {
         private readonly WfeDbContext _db;
+        private readonly IProcessSchemeProvider _schemeProvider;
 
-        public SchemeDesignerController(WfeDbContext db)
+        public SchemeDesignerController(WfeDbContext db, IProcessSchemeProvider schemeProvider)
         {
             _db = db;
+            _schemeProvider = schemeProvider;
         }
 
         /// <summary>Saves a design-time version. Validated eagerly (structure + exactly one
@@ -60,43 +63,35 @@ namespace WFE.Web.Controllers
 
         /// <summary>Resolves a design-time WfeScheme into an immutable WfeProcessScheme
         /// snapshot that instances actually run against (see the WfeProcessScheme model
-        /// comments for why these are kept separate). Phase 1: no subprocess inlining yet, so
-        /// this is currently a straight copy of the XML plus bookkeeping fields.</summary>
+        /// comments for why these are kept separate). This is the "official" publish flow
+        /// (with supersede-previous semantics) - for rapid test/evaluation iteration where you
+        /// don't want that bookkeeping, see IWorkflowRuntime.StartInstanceFromSchemeAsync /
+        /// ProcessPacketFromSchemeAsync instead, which snapshot-and-start in one call.</summary>
         [HttpPost("{schemeId}/publish")]
         public async Task<ActionResult<long>> Publish(long schemeId, PublishSchemeRequest request)
         {
-            var scheme = await _db.WfeSchemes.FirstOrDefaultAsync(s => s.Id == schemeId);
-            if (scheme == null) return NotFound();
-
-            try
-            {
-                ProcessSchemaLoader.Parse(scheme.Scheme);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { error = "Schema XML failed validation.", detail = ex.Message });
-            }
-
             if (request.SupersedePrevious)
             {
                 var previous = await _db.WfeProcessSchemes
                     .Where(ps => ps.SchemeId == schemeId && !ps.IsObsolete)
                     .ToListAsync();
                 foreach (var p in previous) p.IsObsolete = true;
+                await _db.SaveChangesAsync();
             }
 
-            var processScheme = new WfeProcessScheme
+            try
             {
-                SchemeId = scheme.Id,
-                Scheme = scheme.Scheme,
-                IsObsolete = false,
-                RootSchemeCode = scheme.Name,
-                TrackHistory = request.TrackHistory
-            };
-            _db.WfeProcessSchemes.Add(processScheme);
-            await _db.SaveChangesAsync();
-
-            return Ok(processScheme.Id);
+                var (processScheme, _) = await _schemeProvider.CreateSnapshotAsync(schemeId, request.TrackHistory);
+                return Ok(processScheme.Id);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
+            {
+                return NotFound();
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = "Schema XML failed validation.", detail = ex.Message });
+            }
         }
     }
 }

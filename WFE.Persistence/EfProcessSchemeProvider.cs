@@ -43,5 +43,30 @@ namespace WFE.Persistence
             var resolved = _loader.GetOrParse(processSchemeId.ToString(), scheme.Scheme);
             return (scheme, resolved);
         }
+
+        public async Task<(WfeProcessScheme Scheme, ResolvedProcessSchema Resolved)> CreateSnapshotAsync(
+            long schemeId, bool trackHistory, CancellationToken cancellationToken = default)
+        {
+            var source = await _db.WfeSchemes.AsNoTracking().FirstOrDefaultAsync(s => s.Id == schemeId, cancellationToken);
+            if (source == null)
+                throw new InvalidOperationException($"WfeScheme {schemeId} not found.");
+
+            // Validate before persisting - a bad edit shouldn't produce an unusable snapshot row.
+            ProcessSchemaLoader.Parse(source.Scheme);
+
+            var processScheme = new WfeProcessScheme
+            {
+                SchemeId = source.Id,
+                Scheme = source.Scheme,
+                IsObsolete = false,
+                RootSchemeCode = source.Name,
+                TrackHistory = trackHistory
+            };
+            _db.WfeProcessSchemes.Add(processScheme);
+            await _db.SaveChangesAsync(cancellationToken);
+
+            var resolved = _loader.GetOrParse(processScheme.Id.ToString(), processScheme.Scheme);
+            return (processScheme, resolved);
+        }
     }
 }

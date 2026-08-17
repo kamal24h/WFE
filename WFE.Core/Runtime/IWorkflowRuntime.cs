@@ -25,6 +25,27 @@ namespace WFE.Core.Runtime
             string actorId,
             CancellationToken cancellationToken = default);
 
+        /// <summary>Test/evaluation fast path: given a design-time WfeScheme id (not a
+        /// WfeProcessScheme id), creates a fresh immutable snapshot of its CURRENT XML and
+        /// starts a new instance against it in one call - no separate publish step, and later
+        /// edits to the WfeScheme can never retroactively affect this instance. Every call
+        /// creates a new WfeProcessScheme row (no reuse) - fine for iterating on a workflow
+        /// during testing; for a production scheme that many instances should share, use the
+        /// SchemeDesignerController publish flow (WfeCommand/ProcessSchemeId-based) instead.</summary>
+        Task<WorkflowExecutionResult> StartInstanceFromSchemeAsync(
+            long schemeId,
+            IReadOnlyDictionary<string, string> initialParameters,
+            string actorId,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>Same idea as ProcessPacketAsync, but keyed by WfeScheme id per
+        /// StartInstanceFromSchemeAsync - the endpoint WFE.Client actually calls.</summary>
+        Task<WorkflowExecutionResult> ProcessPacketFromSchemeAsync(
+            long schemeId,
+            WfePacket packet,
+            string actorId,
+            CancellationToken cancellationToken = default);
+
         /// <summary>Explicitly invokes a Command-triggered transition from the instance's
         /// current activity, then continues the Auto-transition loop from wherever it lands.</summary>
         Task<WorkflowExecutionResult> ExecuteCommandAsync(
