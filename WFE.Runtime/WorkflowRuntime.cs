@@ -255,7 +255,6 @@ namespace WFE.Runtime
         }
 
         // --- core loop ---
-
         private async Task<WorkflowExecutionResult> RunAutoLoopAsync(
             WfeProcessScheme scheme, ResolvedProcessSchema resolved, WfeProcessInstance instance,
             string actorId, CancellationToken cancellationToken)
