@@ -44,7 +44,7 @@ namespace WFE.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("WfeActors");
+                    b.ToTable("WfeActors", (string)null);
                 });
 
             modelBuilder.Entity("WFE.Models.WfeBusinessProcess", b =>
@@ -68,7 +68,7 @@ namespace WFE.Persistence.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("WfeBusinessProcesses");
+                    b.ToTable("WfeBusinessProcesses", (string)null);
                 });
 
             modelBuilder.Entity("WFE.Models.WfeProcessInstance", b =>
@@ -147,7 +147,7 @@ namespace WFE.Persistence.Migrations
 
                     b.HasIndex("Status", "NextScheduledCheckTime");
 
-                    b.ToTable("WfeProcessInstance");
+                    b.ToTable("WfeProcessInstance", (string)null);
                 });
 
             modelBuilder.Entity("WFE.Models.WfeProcessInstanceParameter", b =>
@@ -177,7 +177,7 @@ namespace WFE.Persistence.Migrations
                     b.HasIndex("ProcessInstanceId", "Name")
                         .IsUnique();
 
-                    b.ToTable("WfeProcessInstanceParameters");
+                    b.ToTable("WfeProcessInstanceParameters", (string)null);
                 });
 
             modelBuilder.Entity("WFE.Models.WfeProcessScheme", b =>
@@ -222,7 +222,7 @@ namespace WFE.Persistence.Migrations
 
                     b.HasIndex("RootSchemeId", "IsObsolete");
 
-                    b.ToTable("WfeProcessSchemes");
+                    b.ToTable("WfeProcessSchemes", (string)null);
                 });
 
             modelBuilder.Entity("WFE.Models.WfeProcessTransitionHistory", b =>
@@ -286,7 +286,7 @@ namespace WFE.Persistence.Migrations
 
                     b.HasIndex("StartTransitionTime");
 
-                    b.ToTable("WfeProcessTransitionsHistory");
+                    b.ToTable("WfeProcessTransitionsHistory", (string)null);
                 });
 
             modelBuilder.Entity("WFE.Models.WfeProcessWorkItem", b =>
@@ -349,7 +349,7 @@ namespace WFE.Persistence.Migrations
 
                     b.HasIndex("Status", "CreatedDateTime");
 
-                    b.ToTable("WfeProcessWorkItems");
+                    b.ToTable("WfeProcessWorkItems", (string)null);
                 });
 
             modelBuilder.Entity("WFE.Models.WfeRole", b =>
@@ -376,7 +376,7 @@ namespace WFE.Persistence.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("WfeRoles");
+                    b.ToTable("WfeRoles", (string)null);
                 });
 
             modelBuilder.Entity("WFE.Models.WfeScheme", b =>
@@ -414,7 +414,7 @@ namespace WFE.Persistence.Migrations
 
                     b.HasIndex("BusinessProcessId");
 
-                    b.ToTable("WfeSchemes");
+                    b.ToTable("WfeSchemes", (string)null);
                 });
 
             modelBuilder.Entity("WFE.Models.WfeUserRole", b =>
@@ -441,7 +441,7 @@ namespace WFE.Persistence.Migrations
                     b.HasIndex("ActorId", "RoleId")
                         .IsUnique();
 
-                    b.ToTable("WfeUserRoles");
+                    b.ToTable("WfeUserRoles", (string)null);
                 });
 
             modelBuilder.Entity("WFE.Models.WfeProcessInstance", b =>

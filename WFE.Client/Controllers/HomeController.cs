@@ -11,14 +11,21 @@ namespace WFE.Client.Controllers
         private readonly PacketActivityLog _log;
         private readonly IWfeApiClient _apiClient;
         private readonly RabbitMqOptions _rabbitMqOptions;
+        private readonly RabbitMqSubscriberService _rabbitMqSubscriber;
         private readonly WfeApiOptions _wfeOptions;
+        private readonly TestAutoAdvancerOptions _autoAdvancerOptions;
 
-        public HomeController(PacketActivityLog log, IWfeApiClient apiClient, RabbitMqOptions rabbitMqOptions, WfeApiOptions wfeOptions)
+        public HomeController(
+            PacketActivityLog log, IWfeApiClient apiClient, RabbitMqOptions rabbitMqOptions,
+            RabbitMqSubscriberService rabbitMqSubscriber, WfeApiOptions wfeOptions,
+            TestAutoAdvancerOptions autoAdvancerOptions)
         {
             _log = log;
             _apiClient = apiClient;
             _rabbitMqOptions = rabbitMqOptions;
+            _rabbitMqSubscriber = rabbitMqSubscriber;
             _wfeOptions = wfeOptions;
+            _autoAdvancerOptions = autoAdvancerOptions;
         }
 
         public IActionResult Index()
@@ -29,6 +36,8 @@ namespace WFE.Client.Controllers
                 RabbitMqEndpoint = $"{_rabbitMqOptions.HostName}:{_rabbitMqOptions.Port}{_rabbitMqOptions.VirtualHost}",
                 RabbitMqQueueName = _rabbitMqOptions.QueueName,
                 RabbitMqAutoConnect = _rabbitMqOptions.AutoConnect,
+                RabbitMqIsRunning = _rabbitMqSubscriber.IsRunning,
+                TestAutoAdvancerEnabled = _autoAdvancerOptions.Enabled,
                 WfeBaseUrl = _wfeOptions.BaseUrl,
                 WfeSchemeId = _wfeOptions.WfeSchemeId
             });

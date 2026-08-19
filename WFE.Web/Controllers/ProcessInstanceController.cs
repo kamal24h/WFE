@@ -40,6 +40,24 @@ namespace WFE.Web.Controllers
         /// <summary>Read-only query - goes straight to EF rather than through
         /// IProcessInstanceStore, since this is a reporting concern, not something the engine
         /// itself needs (WFE.Runtime never references WfeDbContext directly; this controller can).</summary>
+        [HttpGet]
+        public async Task<IActionResult> List([FromQuery] string status = null, [FromQuery] int take = 100)
+        {
+            var query = _db.WfeProcessInstances.AsNoTracking().AsQueryable();
+            if (!string.IsNullOrEmpty(status))
+                query = query.Where(i => i.Status == status);
+
+            var instances = await query
+                .OrderByDescending(i => i.CreationDateTime)
+                .Take(take)
+                .ToListAsync();
+
+            return Ok(instances);
+        }
+
+        /// <summary>Read-only query - goes straight to EF rather than through
+        /// IProcessInstanceStore, since this is a reporting concern, not something the engine
+        /// itself needs (WFE.Runtime never references WfeDbContext directly; this controller can).</summary>
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(long id, [FromQuery] bool includeHistory = false, [FromQuery] bool includeParameters = false)
         {

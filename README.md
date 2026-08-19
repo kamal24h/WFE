@@ -183,6 +183,26 @@ Two related additions, both from your latest request:
   your side if you need stronger guarantees than "logged and visible on the dashboard" for
   individual failures.
 
+## Test auto-advancer (WFE.Client) - not a production pattern
+
+`Services/TestAutoAdvancerService.cs` polls `GET /api/instances?status=Waiting` and
+auto-invokes a Command on each so an evaluation run doesn't stall waiting for a manual click.
+**Disabled by default** (`TestAutoAdvancer:Enabled=false`). Deliberately leaves alone any
+instance Waiting on a Schedule trigger (those have zero available Commands) - that automation
+genuinely belongs in `WFE.Web`'s `ScheduleWorker`, not here. If a workflow needs multiple
+sequential Command-gated steps, it advances one step per `TestAutoAdvancer:PollingIntervalMs` -
+that interval is effectively how fast such a workflow flows through during a test run. Set
+`TestAutoAdvancer:PreferredCommandName` to constrain it to one specific command instead of
+"whichever is first available." This required a new generic endpoint,
+`GET /api/instances?status=&take=`, on the engine (`ProcessInstanceController`) - useful for
+monitoring in general, not just this feature.
+
+**Why this isn't in `WFE.Web` instead:** a background process that silently invokes
+human/external-gated Commands defeats the reason those transitions are Command-triggered rather
+than Auto in the first place. It only belongs in the client, clearly framed as a test
+convenience with its own distinct actor id (`client:test-auto-advancer`) in the audit trail -
+never mistake this for how a production deployment should advance Command-gated transitions.
+
 ## Assumptions worth double-checking against your actual designer output
 
 - **Parallel/Subprocess assumptions (all in `WorkflowRuntime.cs`/`CheckAllSubprocessesCompletedCondition.cs`):**

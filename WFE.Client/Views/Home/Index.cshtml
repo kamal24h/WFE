@@ -7,15 +7,43 @@
         <dt>WFE engine API</dt><dd>@Model.WfeBaseUrl</dd>
         <dt>Target WfeSchemeId</dt><dd>@Model.WfeSchemeId <span style="color:#666">(a fresh WfeProcessScheme snapshot is created for every run)</span></dd>
         <dt>RabbitMQ broker</dt><dd>@Model.RabbitMqEndpoint (queue: <code>@Model.RabbitMqQueueName</code>)</dd>
-        <dt>RabbitMQ auto-connect</dt>
+        <dt>RabbitMQ subscription</dt>
         <dd>
-            @if (Model.RabbitMqAutoConnect)
+            @if (Model.RabbitMqIsRunning)
             {
-                <span class="badge ok">enabled</span>
+                <span class="badge ok">running</span>
             }
             else
             {
-                <span class="badge">disabled — set RabbitMq:AutoConnect=true in appsettings.json once connection settings match your broker</span>
+                <span class="badge">stopped</span>
+            }
+            <form asp-controller="RabbitMq" asp-action="Start" method="post" style="display:inline; margin-inline-start: 0.5rem;">
+                <button type="submit" @(Model.RabbitMqIsRunning ? "disabled" : "")>Start</button>
+            </form>
+            <form asp-controller="RabbitMq" asp-action="Stop" method="post" style="display:inline">
+                <button type="submit" style="background:#b02a37" @(!Model.RabbitMqIsRunning ? "disabled" : "")>Stop</button>
+            </form>
+        </dd>
+        <dt>RabbitMQ auto-start</dt>
+        <dd>
+            @if (Model.RabbitMqAutoConnect)
+            {
+                <span class="badge ok">enabled — starts automatically on app boot</span>
+            }
+            else
+            {
+                <span class="badge">disabled — use the Start button above, or set RabbitMq:AutoConnect=true</span>
+            }
+        </dd>
+        <dt>Test auto-advancer</dt>
+        <dd>
+            @if (Model.TestAutoAdvancerEnabled)
+            {
+                <span class="badge ok">enabled — Waiting instances get auto-advanced</span>
+            }
+            else
+            {
+                <span class="badge">disabled — Waiting instances need a manual command (Swagger or below)</span>
             }
         </dd>
     </dl>

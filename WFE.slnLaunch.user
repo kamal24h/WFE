@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "New Profile",
+    "Projects": [
+      {
+        "Path": "WFE.Web\\WFE.Web.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "WFE.Client\\WFE.Client.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

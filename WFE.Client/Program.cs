@@ -25,7 +25,13 @@ builder.Services.AddHttpClient<IWfeApiClient, WfeApiClient>((sp, http) =>
     http.BaseAddress = new Uri(options.BaseUrl);
 });
 
-builder.Services.AddHostedService<RabbitMqSubscriberService>();
+builder.Services.AddSingleton<RabbitMqSubscriberService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RabbitMqSubscriberService>());
+
+var autoAdvancerOptions = new TestAutoAdvancerOptions();
+builder.Configuration.GetSection("TestAutoAdvancer").Bind(autoAdvancerOptions);
+builder.Services.AddSingleton(autoAdvancerOptions);
+builder.Services.AddHostedService<TestAutoAdvancerService>();
 
 var app = builder.Build();
 

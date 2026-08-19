@@ -19,8 +19,7 @@ namespace WFE.Client.Services
     /// your producer includes. Exact extra field names weren't specified, so ExtraFields
     /// captures anything beyond DeviceId/Tag/Value/Timestamp generically via JsonExtensionData
     /// rather than guessing specific property names - each one just flows through as packet
-    /// Metadata. Adjust the named properties below if your actual field names differ (e.g. if
-    /// "DeviceId" is really "AssetId" in your producer).
+    /// Metadata. Adjust the named properties below if your actual field names differ.
     /// </summary>
     public class SensorRecordDto
     {
@@ -33,28 +32,34 @@ namespace WFE.Client.Services
     }
 
     /// <summary>
-    /// Consumes from your already-provisioned RabbitMQ queue. Each message is a BATCH - a JSON
-    /// array of up to ~500 SensorRecordDto rows - not a single key/value packet. Every record
-    /// in the batch starts its own instance (still "one lightweight instance per reading", per
-    /// your original design), processed with bounded concurrency (RabbitMq:MaxConcurrentIngests)
-    /// rather than 500 simultaneous HTTP calls.
+    /// Consumes from your RabbitMQ queue. Unlike a plain BackgroundService, this is now
+    /// explicitly controllable at runtime: registered as BOTH a singleton (so
+    /// RabbitMqController can inject it and call StartSubscribingAsync/StopSubscribingAsync on
+    /// demand) and an IHostedService (so it still integrates with app startup/shutdown - see
+    /// Program.cs for the "same instance, two roles" registration). RabbitMq:AutoConnect only
+    /// controls whether it starts itself automatically on boot; the real control surface is
+    /// Start()/Stop(), exposed via POST /api/rabbitmq/start and /stop.
     ///
-    /// ACK SEMANTICS - read before relying on this for anything but evaluation: the whole
-    /// message is Ack'd once every record has been ATTEMPTED, regardless of whether individual
-    /// records succeeded or failed (failures are logged and visible in the dashboard, not
-    /// silently dropped). This is deliberate: Nack-and-requeue for a 500-row batch because ONE
-    /// record failed would redeliver all 500, including the ones that already succeeded -
-    /// creating duplicate instances for those. Losing a few genuinely-failed records is the
-    /// lesser evil here for a batch this size. If you need stronger guarantees, add per-record
-    /// dead-lettering or an idempotency key on your side before production use.
+    /// Each message is a BATCH - a JSON array of up to ~500 SensorRecordDto rows - not a single
+    /// key/value packet. Every record starts its own instance, processed with bounded
+    /// concurrency (RabbitMq:MaxConcurrentIngests).
+    ///
+    /// ACK SEMANTICS: if RabbitMq:AutoAck is false (matches your publisher's setting), the
+    /// whole message is Ack'd once every record has been ATTEMPTED, regardless of individual
+    /// success/failure (see HandleBatchAsync) - Nacking a 500-row batch over one bad record
+    /// would redeliver (and duplicate-instance) the ones that already succeeded. If AutoAck is
+    /// true, RabbitMQ has already acked on delivery and this client does nothing further.
     /// </summary>
-    public class RabbitMqSubscriberService : BackgroundService
+    public class RabbitMqSubscriberService : IHostedService, IDisposable
     {
         private readonly RabbitMqOptions _options;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly PacketActivityLog _log;
         private readonly ILogger<RabbitMqSubscriberService> _logger;
 
+        private readonly object _lock = new();
+        private CancellationTokenSource _cts;
+        private Task _runLoopTask;
         private IConnection _connection;
         private IModel _channel;
 
@@ -68,24 +73,76 @@ namespace WFE.Client.Services
             _logger = logger;
         }
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        public bool IsRunning { get; private set; }
+
+        // --- IHostedService: app startup/shutdown integration ---
+
+        public Task StartAsync(CancellationToken cancellationToken)
         {
-            if (!_options.AutoConnect)
+            if (_options.AutoConnect)
             {
-                _logger.LogInformation(
-                    "RabbitMQ auto-connect is disabled (RabbitMq:AutoConnect=false) - subscriber not started. " +
-                    "The manual test form on the dashboard still works without a broker.");
-                return;
+                _logger.LogInformation("RabbitMq:AutoConnect=true - starting subscriber automatically.");
+                return StartSubscribingAsync();
             }
 
+            _logger.LogInformation(
+                "RabbitMq:AutoConnect=false - subscriber idle until started (POST /api/rabbitmq/start " +
+                "or the dashboard button).");
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => StopSubscribingAsync();
+
+        // --- Manual control surface, used by RabbitMqController ---
+
+        public Task StartSubscribingAsync()
+        {
+            lock (_lock)
+            {
+                if (IsRunning)
+                    return Task.CompletedTask;
+
+                _cts = new CancellationTokenSource();
+                IsRunning = true;
+                _runLoopTask = Task.Run(() => RunLoopAsync(_cts.Token));
+            }
+            return Task.CompletedTask;
+        }
+
+        public async Task StopSubscribingAsync()
+        {
+            CancellationTokenSource ctsToCancel;
+            Task loopTask;
+            lock (_lock)
+            {
+                if (!IsRunning)
+                    return;
+                ctsToCancel = _cts;
+                loopTask = _runLoopTask;
+                IsRunning = false;
+            }
+
+            ctsToCancel?.Cancel();
+            if (loopTask != null)
+            {
+                try { await loopTask; }
+                catch { /* the loop handles/logs its own exceptions */ }
+            }
+            CleanUpConnection();
+        }
+
+        // --- Connection loop ---
+
+        private async Task RunLoopAsync(CancellationToken stoppingToken)
+        {
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
                     Connect();
                     _logger.LogInformation(
-                        "RabbitMQ connected to {Host}:{Port}{VHost}, consuming queue '{Queue}'",
-                        _options.HostName, _options.Port, _options.VirtualHost, _options.QueueName);
+                        "RabbitMQ connected to {Host}:{Port}{VHost} ('{ConnectionName}'), consuming queue '{Queue}'",
+                        _options.HostName, _options.Port, _options.VirtualHost, _options.ConnectionName, _options.QueueName);
 
                     var shutdown = new TaskCompletionSource();
                     _connection.ConnectionShutdown += (_, _) => shutdown.TrySetResult();
@@ -100,17 +157,17 @@ namespace WFE.Client.Services
                 }
                 finally
                 {
-                    CleanUp();
+                    CleanUpConnection();
                 }
 
                 if (!stoppingToken.IsCancellationRequested)
                 {
                     try { await Task.Delay(5000, stoppingToken); }
-                    catch (OperationCanceledException) { /* normal on shutdown */ }
+                    catch (OperationCanceledException) { /* normal on stop */ }
                 }
             }
 
-            CleanUp();
+            CleanUpConnection();
         }
 
         private void Connect()
@@ -122,6 +179,8 @@ namespace WFE.Client.Services
                 VirtualHost = _options.VirtualHost,
                 UserName = _options.UserName,
                 Password = _options.Password,
+                ClientProvidedName = _options.ConnectionName,
+                Ssl = new SslOption { Enabled = _options.Ssl, ServerName = _options.HostName },
                 DispatchConsumersAsync = true
             };
 
@@ -129,7 +188,11 @@ namespace WFE.Client.Services
             _channel = _connection.CreateModel();
 
             if (_options.DeclareQueue)
+            {
+                _channel.ExchangeDeclare(_options.Exchange, _options.ExchangeType, durable: true);
                 _channel.QueueDeclare(_options.QueueName, durable: true, exclusive: false, autoDelete: false);
+                _channel.QueueBind(_options.QueueName, _options.Exchange, _options.RoutingKey);
+            }
 
             // A whole 500-row batch can take a moment to process (bounded-concurrency HTTP
             // calls) - only pull one message at a time so we're not holding several huge
@@ -141,20 +204,23 @@ namespace WFE.Client.Services
             {
                 var payload = Encoding.UTF8.GetString(ea.Body.ToArray());
                 await HandleBatchAsync(ea.RoutingKey, payload, CancellationToken.None);
-                // Always Ack after attempting the batch - see class doc comment.
-                _channel.BasicAck(ea.DeliveryTag, multiple: false);
+
+                if (!_options.AutoAck)
+                    _channel.BasicAck(ea.DeliveryTag, multiple: false);
             };
 
-            _channel.BasicConsume(_options.QueueName, autoAck: false, consumer);
+            _channel.BasicConsume(_options.QueueName, autoAck: _options.AutoAck, consumer);
         }
 
-        private void CleanUp()
+        private void CleanUpConnection()
         {
             try { _channel?.Close(); } catch { /* best effort */ }
             try { _connection?.Close(); } catch { /* best effort */ }
             _channel = null;
             _connection = null;
         }
+
+        // --- Batch handling ---
 
         private async Task HandleBatchAsync(string routingKey, string payload, CancellationToken cancellationToken)
         {
@@ -229,6 +295,11 @@ namespace WFE.Client.Services
                     record.DeviceId, record.Tag, routingKey, result.ErrorMessage);
 
             return result.Success;
+        }
+
+        public void Dispose()
+        {
+            _cts?.Dispose();
         }
     }
 }
