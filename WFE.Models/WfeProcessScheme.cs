@@ -4,7 +4,7 @@ namespace WFE.Models
     // starting transition resolved). Instances execute against THIS, not against the mutable
     // design-time WfeScheme row - so republishing a design never changes the behavior of
     // already-running instances.
-    public partial class WfeProcessScheme
+    public class WfeProcessScheme
     {
         public long Id { get; set; }
 
